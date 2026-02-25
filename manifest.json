@@ -1,21 +1,22 @@
 {
   "name": "交换日记",
   "short_name": "交换日记",
-  "description": "极简高定版交换日记",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f8f8f9",
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "https://api.dicebear.com/7.x/notionists/svg?seed=Me",
+      "src": "https://i.postimg.cc/Vv93sqmt/retouch-2026022514053862.jpg",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/jpeg",
+      "purpose": "any"
     },
     {
-      "src": "https://api.dicebear.com/7.x/notionists/svg?seed=Me",
+      "src": "https://i.postimg.cc/Vv93sqmt/retouch-2026022514053862.jpg",
       "sizes": "512x512",
-      "type": "image/svg+xml"
+      "type": "image/jpeg",
+      "purpose": "any maskable"
     }
   ]
 }
