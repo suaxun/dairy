@@ -1349,6 +1349,8 @@
         color: #333;
       }
     </style>
+    <!-- 引入 IndexedDB 存储引擎 localForage -->
+    <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
   </head>
   <body>
     <!-- ▼▼ 高级开屏动画容器 ▼▼ -->
@@ -1993,81 +1995,97 @@
     </div>
 
     <script>
-      // ================= 数据管理 =================
-      let appData = JSON.parse(localStorage.getItem("wx_app_data_v2"));
+      // ================= 数据管理 (IndexedDB 引擎) =================
+      let appData = null; // 全局数据对象
 
-      // 数据初始化与结构升级兼容
-      if (!appData) {
-        appData = {
-          settings: {
-            userName: "泷",
-            userAvatar: "",
-            userCover: "",
-            apiPresets: [],
-            currentPresetId: null,
-          },
-          characters: [],
-          posts: [],
-        };
-      }
+      // 异步初始化应用
+      async function initApp() {
+        try {
+          // 1. 尝试从 IndexedDB 读取新版数据
+          appData = await localforage.getItem("wx_app_data_v3");
 
-      // 兼容老版本数据，将单独的 api 字段转入 presets 数组
-      if (!appData.settings.apiPresets) {
-        appData.settings.apiPresets = [];
-      }
-      if (appData.settings.apiPresets.length === 0) {
-        // 如果有老数据则继承老数据作为默认，否则创建一个空的默认预设
-        let defaultUrl = appData.settings.apiUrl || "https://api.openai.com/v1";
-        // 修正旧数据中带着 /chat/completions 的情况，拉取模型需要基准 url
-        if (defaultUrl.endsWith("/chat/completions")) {
-          defaultUrl = defaultUrl.replace("/chat/completions", "");
+          // 2. 无缝迁移：如果 IDB 里没数据，但 LocalStorage 里有旧数据，则自动迁移！
+          if (!appData) {
+            const oldData = localStorage.getItem("wx_app_data_v2");
+            if (oldData) {
+              console.log("正在将数据从 LocalStorage 无缝迁移至 IndexedDB...");
+              appData = JSON.parse(oldData);
+              await localforage.setItem("wx_app_data_v3", appData);
+            }
+          }
+
+          // 3. 如果彻底没有数据，则创建默认初始结构
+          if (!appData) {
+            appData = {
+              settings: {
+                userName: "泷",
+                userAvatar: "",
+                userCover: "",
+                apiPresets: [],
+                currentPresetId: null,
+              },
+              characters: [],
+              posts: [],
+            };
+          }
+
+          // --- 兼容老版本数据结构 ---
+          if (!appData.settings.apiPresets) {
+            appData.settings.apiPresets = [];
+          }
+          if (appData.settings.apiPresets.length === 0) {
+            let defaultUrl = appData.settings.apiUrl || "https://api.openai.com/v1";
+            if (defaultUrl.endsWith("/chat/completions")) {
+              defaultUrl = defaultUrl.replace("/chat/completions", "");
+            }
+            const defaultPreset = {
+              id: "preset_" + Date.now(),
+              name: "默认配置",
+              apiUrl: defaultUrl,
+              apiKey: appData.settings.apiKey || "",
+              apiModel: appData.settings.apiModel || "gpt-4o",
+            };
+            appData.settings.apiPresets.push(defaultPreset);
+            appData.settings.currentPresetId = defaultPreset.id;
+          }
+
+          // 4. 渲染界面
+          loadSettingsToUI();
+          renderCharList();
+
+          // 5. 优雅关闭开屏动画
+          setTimeout(() => {
+            const splash = document.getElementById("splash-screen");
+            if (splash) {
+              splash.style.opacity = "0";
+              splash.style.visibility = "hidden";
+              setTimeout(() => {
+                document.body.classList.remove("splash-active");
+              }, 800);
+            }
+          }, 1800);
+
+        } catch (err) {
+          console.error("数据库初始化失败:", err);
+          alert("数据库加载失败，请刷新页面重试。");
         }
-
-        const defaultPreset = {
-          id: "preset_" + Date.now(),
-          name: "默认配置",
-          apiUrl: defaultUrl,
-          apiKey: appData.settings.apiKey || "",
-          apiModel: appData.settings.apiModel || "gpt-4o",
-        };
-        appData.settings.apiPresets.push(defaultPreset);
-        appData.settings.currentPresetId = defaultPreset.id;
       }
 
       // 默认极简占位图
-      const DEFAULT_USER_AVATAR =
-        "https://api.dicebear.com/7.x/notionists/svg?seed=Me&backgroundColor=e5e5e5";
-      const DEFAULT_COVER =
-        "https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80";
+      const DEFAULT_USER_AVATAR = "https://api.dicebear.com/7.x/notionists/svg?seed=Me&backgroundColor=e5e5e5";
+      const DEFAULT_COVER = "https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80";
 
       let currentCharId = null;
       let currentImageBase64 = null;
       let currentLocation = "";
-
       let currentViewMode = "exchange";
       let currentRotation = 0;
 
       window.onload = () => {
-        // 标记 body 为开屏状态
         document.body.classList.add("splash-active");
-
-        loadSettingsToUI();
-        renderCharList();
-
-        // 控制开屏动画 1.8 秒后优雅淡出
-        setTimeout(() => {
-          const splash = document.getElementById("splash-screen");
-          if (splash) {
-            splash.style.opacity = "0";
-            splash.style.visibility = "hidden";
-
-            // 动画完全结束后解除滚动限制
-            setTimeout(() => {
-              document.body.classList.remove("splash-active");
-            }, 800);
-          }
-        }, 1800);
+        initApp(); // 启动异步加载引擎
       };
+
 
       // ================= PWA 安装引导逻辑 =================
       let deferredPrompt;
@@ -2139,18 +2157,13 @@
         }, 8000);
       }
 
-function saveAppData() {
-  try {
-    localStorage.setItem("wx_app_data_v2", JSON.stringify(appData));
-  } catch (e) {
-    if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
-      alert("⚠️ 存档失败：本地存储空间已满 (浏览器限制5MB)。\n\n请尝试：\n1. 删除一些带有图片的旧日记。\n2. 去设置页【备份宇宙数据】，然后再清理一些数据。");
-    } else {
-      alert("⚠️ 保存数据时发生未知错误：" + e.message);
-    }
-    console.error("存档错误:", e);
-  }
-}
+      function saveAppData() {
+        // localforage 会在后台异步保存数据，不阻塞 UI 运行，上限极大
+        localforage.setItem("wx_app_data_v3", appData).catch(function (err) {
+          console.error("保存失败:", err);
+          alert("⚠️ 后台存档失败: " + err.message);
+        });
+      }
 
 
       function switchPage(pageId, navElement) {
@@ -3570,11 +3583,9 @@ ${char.memory || "这是你们刚开始交换日记，暂无过去的长期记�
           }
 
           // 强制保存
-          try {
-            localStorage.setItem("wx_app_data_v2", JSON.stringify(appData));
-          } catch(saveError) {
-             throw new Error("压缩后仍然超出限制，你可能需要去备份后直接删除几篇日记了。");
-          }
+          // 强制存入新数据库
+          await localforage.setItem("wx_app_data_v3", appData);
+
           
           let newSize = JSON.stringify(appData).length;
           let savedKb = ((originalSize - newSize) / 1024).toFixed(2);
