@@ -1607,7 +1607,14 @@
           </button>
 
           <div class="section-title">记忆管理 Data</div>
+          
+          <!-- 新增：一键压缩空间按钮 -->
+          <button class="btn btn-outline" style="color: #ff9500; border-color: #ff9500;" onclick="rescueStorageSpace()">
+            🧹 一键瘦身 (极限压缩旧图片腾出空间)
+          </button>
+          
           <button class="btn btn-outline" onclick="exportData()">
+
             备份宇宙数据
           </button>
           <button
@@ -1861,6 +1868,18 @@
             ></textarea>
           </div>
           <!-- ▲▲▲ 新增结束 ▲▲▲ -->
+                    <!-- ▼▼▼ 新增：TA的核心记忆编辑框 ▼▼▼ -->
+          <div class="form-group" style="border-left: 3px solid #ffd166;">
+            <span class="form-label" style="color: #b38b22;">🧠 TA对你的最新记忆 (Memory)</span>
+            <textarea
+              class="form-textarea"
+              id="editCharMemory"
+              rows="3"
+              placeholder="例如：TA记得你昨天说喜欢吃草莓蛋糕... (每次交换日记AI会自动更新这里，你也可以随时手动修正以免TA记错)"
+            ></textarea>
+          </div>
+          <!-- ▲▲▲ 新增结束 ▲▲▲ -->
+
           <div class="section-title">
             <span>世界书 World Info</span>
           </div>
@@ -2120,9 +2139,19 @@
         }, 8000);
       }
 
-      function saveAppData() {
-        localStorage.setItem("wx_app_data_v2", JSON.stringify(appData));
-      }
+function saveAppData() {
+  try {
+    localStorage.setItem("wx_app_data_v2", JSON.stringify(appData));
+  } catch (e) {
+    if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
+      alert("⚠️ 存档失败：本地存储空间已满 (浏览器限制5MB)。\n\n请尝试：\n1. 删除一些带有图片的旧日记。\n2. 去设置页【备份宇宙数据】，然后再清理一些数据。");
+    } else {
+      alert("⚠️ 保存数据时发生未知错误：" + e.message);
+    }
+    console.error("存档错误:", e);
+  }
+}
+
 
       function switchPage(pageId, navElement) {
         document
@@ -2138,8 +2167,7 @@
         if (pageId === "page-settings") loadSettingsToUI(); // 切换到设置页时刷新
       }
 
-      // ================= 前端图片压缩引擎 =================
-      function compressImage(file, callback, maxWidth = 800) {
+      function compressImage(file, callback, maxWidth = 600) {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = (event) => {
@@ -2163,11 +2191,18 @@
             const ctx = canvas.getContext("2d");
             ctx.drawImage(img, 0, 0, width, height);
 
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+            // 核心修改：使用 webp 格式代替 jpeg，压缩率设为 0.5 (人眼几乎看不出区别，但体积小几倍)
+            let dataUrl = canvas.toDataURL("image/webp", 0.5);
+            
+            // 如果浏览器不支持webp导致转码失败，降级回jpeg
+            if (!dataUrl.startsWith("data:image/webp")) {
+                dataUrl = canvas.toDataURL("image/jpeg", 0.5);
+            }
             callback(dataUrl);
           };
         };
       }
+
 
       // ================= 头像与壁纸上传处理 =================
       function handleUserAvatarUpload(e) {
@@ -2176,20 +2211,16 @@
           document.getElementById("globalUserAvatarPreview").src = base64;
           appData.settings.userAvatar = base64;
           saveAppData();
-        });
+        }, 256); // 头像限制在 256 像素
       }
 
       function handleUserCoverUpload(e) {
         if (!e.target.files[0]) return;
-        compressImage(
-          e.target.files[0],
-          (base64) => {
+        compressImage(e.target.files[0], (base64) => {
             document.getElementById("globalUserCoverPreview").src = base64;
             appData.settings.userCover = base64;
             saveAppData();
-          },
-          1200,
-        );
+          }, 800); // 封面保持 800 像素
       }
 
       function handleCharAvatarUpload(e) {
@@ -2197,19 +2228,15 @@
         compressImage(e.target.files[0], (base64) => {
           document.getElementById("editCharAvatarPreview").src = base64;
           document.getElementById("editCharAvatar").value = base64;
-        });
+        }, 256); // 角色头像限制在 256 像素
       }
 
       function handleCharCoverUpload(e) {
         if (!e.target.files[0]) return;
-        compressImage(
-          e.target.files[0],
-          (base64) => {
+        compressImage(e.target.files[0], (base64) => {
             document.getElementById("editCharCoverPreview").src = base64;
             document.getElementById("editCharCover").value = base64;
-          },
-          1200,
-        );
+          }, 800); // 角色封面保持 800 像素
       }
 
       function handlePostImageUpload(e) {
@@ -2218,8 +2245,9 @@
           currentImageBase64 = base64;
           document.getElementById("previewImg").src = base64;
           document.getElementById("previewContainer").style.display = "block";
-        });
+        }); // 动态图片使用默认的 600 像素
       }
+
 
       // ================= 设置页预设逻辑 =================
       function loadSettingsToUI() {
@@ -2524,6 +2552,8 @@
           document.getElementById("editCharName").value = char.name;
           document.getElementById("editCharPrompt").value = char.prompt;
           document.getElementById("editCharJailbreak").value = char.jailbreak || "";
+          document.getElementById("editCharMemory").value = char.memory || "";
+
 
           document.getElementById("editCharAvatarPreview").src = char.avatar;
           document.getElementById("editCharAvatar").value = char.avatar;
@@ -2547,6 +2577,8 @@
           document.getElementById("editCharName").value = "";
           document.getElementById("editCharPrompt").value = "";
           document.getElementById("editCharJailbreak").value = "";
+          document.getElementById("editCharMemory").value = "";
+
           renderWorldInfo([]);
 
           const randomUrl = `https://api.dicebear.com/7.x/notionists/svg?seed=${Math.random()}&backgroundColor=ffd5dc,b6e3f4,c0aede`;
@@ -2574,11 +2606,13 @@
           id: id,
           name: name,
           prompt: document.getElementById("editCharPrompt").value,
-          jailbreak: document.getElementById("editCharJailbreak").value, // 👈 新增保存破限
+          jailbreak: document.getElementById("editCharJailbreak").value, 
+          memory: document.getElementById("editCharMemory").value.trim(), // 👈 新增：保存手动修改的记忆
           worldInfo: extractWorldInfoFromUI(),
           avatar: document.getElementById("editCharAvatar").value,
           cover: document.getElementById("editCharCover").value,
         };
+
 
 
         const existingIndex = appData.characters.findIndex((c) => c.id === id);
@@ -3456,6 +3490,102 @@ ${isReply ? `4. 同时，你还可以针对TA的日记留下一句简短的【�
         ) {
           // 传入 null 表示没有具体的 userPost，这是单纯的催更
           await triggerAI(null, char);
+        }
+      }
+            // ================= 一键瘦身(全量图片压缩) 引擎 =================
+      
+      // 异步图片压缩辅助函数
+      function compressBase64Async(base64Str, maxWidth = 600, quality = 0.5) {
+        return new Promise((resolve) => {
+          if (!base64Str || !base64Str.startsWith('data:image')) {
+            resolve(base64Str); // 不是图片，直接返回原数据
+            return;
+          }
+          const img = new Image();
+          img.src = base64Str;
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > height && width > maxWidth) {
+              height *= maxWidth / width;
+              width = maxWidth;
+            } else if (height > maxWidth) {
+              width *= maxWidth / height;
+              height = maxWidth;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            let newDataUrl = canvas.toDataURL("image/webp", quality);
+            if (!newDataUrl.startsWith("data:image/webp")) {
+                newDataUrl = canvas.toDataURL("image/jpeg", quality);
+            }
+            resolve(newDataUrl);
+          };
+          img.onerror = () => resolve(base64Str); // 报错则返回原数据
+        });
+      }
+
+      // 执行全宇宙数据瘦身
+      async function rescueStorageSpace() {
+        if (!confirm("⚠️ 警告：这会将存档里所有角色的头像、背景、以及旧日记的配图进行极限压缩，画质会稍微降低，但能腾出大量空间。是否继续？")) return;
+
+        showLoading("正在施展空间压缩魔法...\n（旧图片越多耗时越长，请勿关闭页面）");
+        
+        let originalSize = JSON.stringify(appData).length;
+
+        try {
+          // 1. 压缩全局设置的图片
+          appData.settings.userAvatar = await compressBase64Async(appData.settings.userAvatar, 256, 0.4);
+          appData.settings.userCover = await compressBase64Async(appData.settings.userCover, 800, 0.5);
+
+          // 2. 压缩所有角色的图片
+          for (let char of appData.characters) {
+            char.avatar = await compressBase64Async(char.avatar, 256, 0.4);
+            char.cover = await compressBase64Async(char.cover, 800, 0.5);
+          }
+
+          // 3. 压缩所有日记里的配图
+          for (let post of appData.posts) {
+            if (post.image) {
+              post.image = await compressBase64Async(post.image, 600, 0.5);
+            }
+            // 同时清理一下可能存在的无用图片字段，防患未然
+            if(post.comments && post.comments.length > 0) {
+              for (let comment of post.comments) {
+                if(comment.avatar && comment.avatar.startsWith('data:image')) {
+                  comment.avatar = await compressBase64Async(comment.avatar, 128, 0.3); // 评论头像压到极小
+                }
+              }
+            }
+          }
+
+          // 强制保存
+          try {
+            localStorage.setItem("wx_app_data_v2", JSON.stringify(appData));
+          } catch(saveError) {
+             throw new Error("压缩后仍然超出限制，你可能需要去备份后直接删除几篇日记了。");
+          }
+          
+          let newSize = JSON.stringify(appData).length;
+          let savedKb = ((originalSize - newSize) / 1024).toFixed(2);
+          let percent = ((originalSize - newSize) / originalSize * 100).toFixed(1);
+
+          alert(`✨ 瘦身完成！\n\n成功腾出了约 ${savedKb} KB 的空间\n体积缩小了 ${percent}%！\n现在你可以继续畅快地写日记了。`);
+          
+          // 刷新界面
+          loadSettingsToUI(); 
+          renderCharList();
+          
+        } catch (e) {
+          alert("压缩过程出现错误：" + e.message);
+        } finally {
+          hideLoading();
         }
       }
     </script>
